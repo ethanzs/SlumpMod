@@ -526,6 +526,33 @@ reliable server function S_AdminOverrideFeintRecovery(float fMultiplier) {
 		S_AdminBroadcastMessage("Feint recovery multiplier set to" @ fMultiplier, false);
 }
 
+exec function AdminOverrideParryKnockback(optional float fMultiplier = 1.0)
+{
+	if (!PlayerReplicationInfo.bAdmin) {
+		ClientDisplayConsoleMessage("You are not logged in as an administrator on this server.");
+		return;
+	}
+	S_AdminOverrideParryKnockback(fMultiplier);
+}
+
+reliable server function S_AdminOverrideParryKnockback(float fMultiplier) {
+	if (!IsAdmin())
+		return;
+
+	// Clamp to a sane range to prevent griefing (0.1x to 5x).
+	fMultiplier = FClamp(fMultiplier, 0.1, 5.0);
+
+	class'XangModAOCDuelPlayerController'.default.fParryKnockbackMultiplier = fMultiplier;
+	class'XangModAOCDuelPlayerController'.static.StaticSaveConfig();
+
+	XangModSyncParryKnockbackToAll(fMultiplier);
+
+	if (fMultiplier == 1.0)
+		S_AdminBroadcastMessage("Parry knockback reset to vanilla (1.0)", false);
+	else
+		S_AdminBroadcastMessage("Parry knockback multiplier set to" @ fMultiplier, false);
+}
+
 // CE Autoskip: auto-fires "ce skip" when TO timer reaches 5 seconds
 exec function AdminCEAutoskip()
 {

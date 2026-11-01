@@ -192,6 +192,8 @@ DefaultProperties
 	fXangModCollisionRadius=39.0
 	// Feint recovery multiplier default (1.0 = vanilla)
 	fFeintRecoveryMultiplier=1.0
+	// Parry knockback multiplier default (1.0 = vanilla)
+	fParryKnockbackMultiplier=1.0
 
 }
 

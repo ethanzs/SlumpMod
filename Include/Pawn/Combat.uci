@@ -801,6 +801,11 @@ function ProcessResolvedAttack(HitInfo Info, string DamageString, optional bool 
 	Info.HitForce *= int(PawnState != ESTATE_PUSH && PawnState != ESTATE_BATTERING);
 	Info.HitForce *= int(!bFlinch);
 	HitForceMag = VSize( Info.HitForce );
+	// XANGMOD: admin-driven parry knockback multiplier (AdminOverrideParryKnockback).
+	// Scale the momentum the DEFENDER receives for a parried/shielded hit. The raw knockback
+	// magnitude originates as fForce in the weapon attachment files and flows into Info.HitForce.
+	if (bParry && class'XangModAOCDuelPlayerController'.default.fParryKnockbackMultiplier > 0.0f)
+		HitForceMag *= class'XangModAOCDuelPlayerController'.default.fParryKnockbackMultiplier;
 	Info.HitForce.Z = 0.f;
 	Info.HitForce = Normal(Info.HitForce) * HitForceMag;
 

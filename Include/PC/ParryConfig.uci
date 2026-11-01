@@ -142,3 +142,18 @@ function XangModSyncFeintRecoveryToAll(float fMultiplier)
 		PC.ClientSyncFeintRecoveryMultiplier(fMultiplier);
 }
 
+reliable client function ClientSyncParryKnockbackMultiplier(float fMultiplier)
+{
+	fParryKnockbackMultiplier = fMultiplier;
+	class'XangModAOCDuelPlayerController'.default.fParryKnockbackMultiplier = fMultiplier;
+}
+
+// Server: push the parry knockback multiplier to every player, not just the admin.
+function XangModSyncParryKnockbackToAll(float fMultiplier)
+{
+	local `{GAMEMODE}PlayerController PC;
+
+	foreach WorldInfo.AllControllers(class'`{GAMEMODE}PlayerController', PC)
+		PC.ClientSyncParryKnockbackMultiplier(fMultiplier);
+}
+
