@@ -1,14 +1,16 @@
 // SlumpMod Team Objective gamemode-specific optimizations
 // This file is ONLY included by XangModTO.uc (the gamemode class)
 
-// Trigger a Kismet SeqEvent_Console by name (equivalent to "ce <EventName>" from PlayerController)
+// Trigger a Kismet SeqEvent_Console by name (equivalent to "ce <EventName>" from PlayerController).
 // GameInfo can't use ConsoleCommand("ce ...") because "ce" is an exec function on PlayerController.
-function TriggerConsoleEvent(name EventName)
+// True means at least one matching event accepted activation, including queued Kismet work.
+function bool TriggerConsoleEvent(name EventName)
 {
     local array<SequenceObject> AllConsoleEvents;
     local SeqEvent_Console ConsoleEvt;
     local Sequence GameSeq;
     local int Idx;
+    local bool bActivated;
 
     GameSeq = WorldInfo.GetGameSequence();
     if (GameSeq != None && EventName != '')
@@ -19,10 +21,12 @@ function TriggerConsoleEvent(name EventName)
             ConsoleEvt = SeqEvent_Console(AllConsoleEvents[Idx]);
             if (ConsoleEvt != None && EventName == ConsoleEvt.ConsoleEventName)
             {
-                ConsoleEvt.CheckActivate(self, self);
+                if (ConsoleEvt.CheckActivate(self, self))
+                    bActivated = true;
             }
         }
     }
+    return bActivated;
 }
 
 // True when running on CompForest (AOCTO-CompForest_p).
@@ -408,8 +412,11 @@ State AOCRoundInProgress
             // TimeLeft (not WorldInfo.TimeSeconds) so admin pause doesn't skew the trigger.
             if (CurrentObjectiveStage == 0 && TimeLeft <= 60 && TimeLeft > 0 && !bCECompForestAutoskipFired)
             {
+                // Mark before activation: an immediate objective callback must see the skip.
+                // A missing/disabled event must not mark a later real completion as skipped.
                 XangModObjSkipMark = CurrentObjectiveStage + 1;
-                TriggerConsoleEvent('skip');
+                if (!TriggerConsoleEvent('skip'))
+                    XangModObjSkipMark = 0;
                 bCECompForestAutoskipFired = true;
             }
             else if (CurrentObjectiveStage != 0 || TimeLeft > 60)
@@ -423,8 +430,11 @@ State AOCRoundInProgress
             // Generic admin-toggled autoskip: fire "ce skip" when timer drops to 10s
             if (TimeLeft <= 10 && TimeLeft > 0 && !bCEAutoskipFired)
             {
+                // Mark before activation: an immediate objective callback must see the skip.
+                // A missing/disabled event must not mark a later real completion as skipped.
                 XangModObjSkipMark = CurrentObjectiveStage + 1;
-                TriggerConsoleEvent('skip');
+                if (!TriggerConsoleEvent('skip'))
+                    XangModObjSkipMark = 0;
                 bCEAutoskipFired = true;
             }
             else if (TimeLeft > 10)

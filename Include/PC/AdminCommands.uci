@@ -137,6 +137,8 @@ exec function AdminRConStatus() {
 
 // Listener state, every RCON session and recent rejected logins, to this admin's console.
 reliable server function ServerAdminRConStatus() {
+	local AOCGame Game;
+	local AOCRCon ActiveConsole;
 	local XangModRCon RCon;
 	local array<string> Lines;
 	local string Line;
@@ -144,14 +146,30 @@ reliable server function ServerAdminRConStatus() {
 	if (!PlayerReplicationInfo.bAdmin)
 		return;
 
-	foreach WorldInfo.AllActors(class'XangModRCon', RCon) {
-		if (XangModRConSession(RCon) == none) {
+	if (WorldInfo.Game == none) {
+		ClientDisplayConsoleMessage("No active game; Heir round telemetry is unavailable.");
+		return;
+	}
+	Lines.AddItem("Runtime game:" @ string(WorldInfo.Game.Class));
+	Game = AOCGame(WorldInfo.Game);
+	if (Game != none)
+		ActiveConsole = Game.RemoteConsole;
+
+	if (ActiveConsole == none) {
+		Lines.AddItem("No game event target; Heir round telemetry is unavailable. Check listener startup logs.");
+	} else {
+		Lines.AddItem("Game event target:" @ string(ActiveConsole) @ "| class" @ string(ActiveConsole.Class));
+		RCon = XangModRCon(ActiveConsole);
+		if (RCon == none || XangModRConSession(RCon) != none) {
+			Lines.AddItem("WARNING: game events do not target an XangMod listener; round opcodes 65-69 are unavailable.");
+		} else {
 			RCon.XangModStatusLines(Lines);
-			break;
+			if (RCon.XangModIsListening())
+				Lines.AddItem("Listener ready; supported SlumpMod game modes emit round opcodes 65-69.");
+			else
+				Lines.AddItem("Listener is not ready for connections; Heir round telemetry is unavailable until it is listening.");
 		}
 	}
-	if (Lines.Length == 0)
-		Lines.AddItem("No XangMod RCON listener on this server.");
 
 	foreach Lines(Line)
 		ClientDisplayConsoleMessage(Line);
