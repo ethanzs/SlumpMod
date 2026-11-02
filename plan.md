@@ -103,7 +103,12 @@ If this is too forgiving, narrow it later with a constant:
 160 degrees total: dot >= cos(80 degrees) ~= 0.1736
 140 degrees total: dot >= cos(70 degrees) ~= 0.3420
 120 degrees total: dot >= cos(60 degrees) = 0.5
-110 degrees total: dot >= cos(55 degrees) ~= 0.5736  <- current value
+110 degrees total: dot >= cos(55 degrees) ~= 0.5736  <- current default
+
+The value is no longer a source constant: it is the `globalconfig` float
+`fXangModParryConeDegrees` on `XangModAOCDuelPlayerController`, read at hit-resolution
+time and changeable in-game with the admin command `AdminParryCone <degrees>` (server-wide,
+synced to every client because the check also runs on the attacker's client).
 ```
 
 Do not make this an admin command initially. Tune in source after playtesting.

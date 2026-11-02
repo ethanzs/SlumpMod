@@ -286,6 +286,8 @@ event Possess(Pawn inPawn, bool bVehicleTransition)
 	{
 		ClientSyncParryBoxSettings(class'XangModAOCDuelPlayerController'.default.bXangModParryBox,
 			class'XangModAOCDuelPlayerController'.default.bSkeletalParry);
+		// Same reasoning for the directional parry cone: it is evaluated on the attacker's client.
+		ClientSyncParryCone(class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees);
 		// ClientSyncCollisionRadius(class'XangModAOCDuelPlayerController'.default.fXangModCollisionRadius);
 	}
 	

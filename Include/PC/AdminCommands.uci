@@ -553,6 +553,41 @@ reliable server function S_AdminOverrideParryKnockback(float fMultiplier) {
 		S_AdminBroadcastMessage("Parry knockback multiplier set to" @ fMultiplier, false);
 }
 
+// Server-wide directional melee parry cone, in total degrees. No argument = report current value.
+// 110 is the shipped default; 180 is a full front hemisphere; 30 is very tight.
+exec function AdminParryCone(optional float fDegrees = -1.0)
+{
+	if (!PlayerReplicationInfo.bAdmin) {
+		ClientDisplayConsoleMessage("You are not logged in as an administrator on this server.");
+		return;
+	}
+	S_AdminParryCone(fDegrees);
+}
+
+reliable server function S_AdminParryCone(float fDegrees) {
+	if (!IsAdmin())
+		return;
+
+	// No argument: report the current value instead of changing it.
+	if (fDegrees < 0.0f) {
+		S_AdminBroadcastMessage("Parry cone is currently" @ class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees $ " degrees", false);
+		return;
+	}
+
+	// Clamp to a sane range to prevent griefing (30 = very tight, 180 = full hemisphere).
+	fDegrees = FClamp(fDegrees, 30.0, 180.0);
+
+	class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees = fDegrees;
+	class'XangModAOCDuelPlayerController'.static.StaticSaveConfig();
+
+	XangModSyncParryConeToAll(fDegrees);
+
+	if (fDegrees == 110.0)
+		S_AdminBroadcastMessage("Parry cone reset to default (110 degrees)", false);
+	else
+		S_AdminBroadcastMessage("Parry cone set to" @ fDegrees $ " degrees", false);
+}
+
 // CE Autoskip: auto-fires "ce skip" when TO timer reaches 5 seconds
 exec function AdminCEAutoskip()
 {

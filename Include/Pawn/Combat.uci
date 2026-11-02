@@ -161,6 +161,8 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	local vector AttackerOffset;
 	local float HitDot;
 	local float AttackerDot;
+	local float ConeDegrees;
+	local float ConeDot;
 
 	if (Info.HitActor == none || Info.DamageType == none || Info.DamageType.default.bIsProjectile)
 		return false;
@@ -175,12 +177,20 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	if (VSize(DefenderForward) <= 0.0f)
 		return false;
 
-	// Hit landed in the defender's front ~110-degree cone (dot >= cos(55deg) ~ 0.5736).
+	// Defender's front parry cone, admin-tunable server-wide via AdminParryCone.
+	// Default 110 degrees total (~55 deg half-angle, dot >= cos(55deg) ~ 0.5736).
+	ConeDegrees = class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees;
+	if (ConeDegrees <= 0.0f)
+		ConeDegrees = 110.0f;
+	ConeDegrees = FMin(ConeDegrees, 180.0f);
+	ConeDot = Cos((ConeDegrees * 0.5f) * Pi / 180.0f);
+
+	// Hit landed in the defender's front parry cone.
 	HitOffset = Info.HitLocation - Info.HitActor.Location;
 	HitOffset.Z = 0.0f;
 	HitDot = VSize(HitOffset) > 1.0f ? (Normal(HitOffset) dot DefenderForward) : -1.0f;
 
-	// Attacker standing in the defender's front ~110-degree cone. This is the extra
+	// Attacker standing in the defender's front parry cone. This is the extra
 	// check for close overheads/arcs: a large weapon can land behind the defender's
 	// head while the attacker is still directly in front, and the handle+damage tracer
 	// mix made that effectively unparryable under a hit-location-only rule.
@@ -188,7 +198,7 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	AttackerOffset.Z = 0.0f;
 	AttackerDot = VSize(AttackerOffset) > 1.0f ? (Normal(AttackerOffset) dot DefenderForward) : -1.0f;
 
-	return (HitDot >= 0.5736f) || (AttackerDot >= 0.5736f);
+	return (HitDot >= ConeDot) || (AttackerDot >= ConeDot);
 }
 
 simulated function RecordSuccessfulParryTime()

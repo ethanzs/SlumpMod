@@ -157,3 +157,20 @@ function XangModSyncParryKnockbackToAll(float fMultiplier)
 		PC.ClientSyncParryKnockbackMultiplier(fMultiplier);
 }
 
+// The directional parry cone is evaluated on the attacker's client during hit resolution,
+// so every client needs the server's value as well as the server itself.
+reliable client function ClientSyncParryCone(float fDegrees)
+{
+	fXangModParryConeDegrees = fDegrees;
+	class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees = fDegrees;
+}
+
+// Server: push the parry cone to every player, not just the admin.
+function XangModSyncParryConeToAll(float fDegrees)
+{
+	local `{GAMEMODE}PlayerController PC;
+
+	foreach WorldInfo.AllControllers(class'`{GAMEMODE}PlayerController', PC)
+		PC.ClientSyncParryCone(fDegrees);
+}
+

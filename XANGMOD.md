@@ -1848,6 +1848,7 @@ understanding before you touch them:
 | `AdminCompForestAlternatingSpawns [bool]` | Alternate A/B spawn groups during the CompForest sluice gate objective only | `bEnableCompForestAlternatingSpawns` |
 | `AdminResetAllTraction` | Reset traction on all surfaces |
 | `AdminResetIceTraction` | Reset ice traction specifically |
+| `AdminParryCone [degrees]` | Directional melee parry cone, total degrees, applied server-wide. `110` is the default, `180` is a full front hemisphere, `30` is very tight. Clamped to 30–180. No argument reports the current value. Saved to the ini, so it survives restarts | `fXangModParryConeDegrees` |
 
 Melee parry success is default-on directional logic in `Include/Pawn/Combat.uci`; there is no
 admin parry-box toggle. The old parry component can still be visualized for debugging, but XangMod
