@@ -175,12 +175,12 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	if (VSize(DefenderForward) <= 0.0f)
 		return false;
 
-	// Hit landed in the defender's front ~160-degree cone (dot >= cos(80deg) ~ 0.1736).
+	// Hit landed in the defender's front ~110-degree cone (dot >= cos(55deg) ~ 0.5736).
 	HitOffset = Info.HitLocation - Info.HitActor.Location;
 	HitOffset.Z = 0.0f;
 	HitDot = VSize(HitOffset) > 1.0f ? (Normal(HitOffset) dot DefenderForward) : -1.0f;
 
-	// Attacker standing in the defender's front ~160-degree cone. This is the extra
+	// Attacker standing in the defender's front ~110-degree cone. This is the extra
 	// check for close overheads/arcs: a large weapon can land behind the defender's
 	// head while the attacker is still directly in front, and the handle+damage tracer
 	// mix made that effectively unparryable under a hit-location-only rule.
@@ -188,7 +188,7 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	AttackerOffset.Z = 0.0f;
 	AttackerDot = VSize(AttackerOffset) > 1.0f ? (Normal(AttackerOffset) dot DefenderForward) : -1.0f;
 
-	return (HitDot >= 0.1736f) || (AttackerDot >= 0.1736f);
+	return (HitDot >= 0.5736f) || (AttackerDot >= 0.5736f);
 }
 
 simulated function RecordSuccessfulParryTime()

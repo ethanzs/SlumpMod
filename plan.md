@@ -103,6 +103,7 @@ If this is too forgiving, narrow it later with a constant:
 160 degrees total: dot >= cos(80 degrees) ~= 0.1736
 140 degrees total: dot >= cos(70 degrees) ~= 0.3420
 120 degrees total: dot >= cos(60 degrees) = 0.5
+110 degrees total: dot >= cos(55 degrees) ~= 0.5736  <- current value
 ```
 
 Do not make this an admin command initially. Tune in source after playtesting.
