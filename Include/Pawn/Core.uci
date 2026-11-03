@@ -56,7 +56,8 @@ function bool Died(Controller Killer, class<DamageType> DamageType, vector HitLo
     local `{GAMEMODE} ModGame;
     local bool bReportDeath, bDied;
 
-    ModGame = `{GAMEMODE}(WorldInfo.Game);
+	// Keep '(' separate so the preprocessor does not consume it as macro arguments.
+	ModGame = `{GAMEMODE} (WorldInfo.Game);
     bReportDeath = ModGame != none && ModGame.XangModRoundReportingEnabled();
     if (bReportDeath)
         ModGame.XangModBeginDeathReport();

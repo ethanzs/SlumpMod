@@ -83,6 +83,12 @@ function game({round = 1, objective = false} = {}) {
   return {state, sent, trace};
 }
 
+test('pawn game cast separates macro expansion from cast arguments', () => {
+  assert.doesNotMatch(strip(pawn), /`\{GAMEMODE\}\(/,
+    'adjacent parentheses are consumed as macro arguments, leaving a bare class name');
+  assert.match(strip(pawn), /ModGame\s*=\s*`\{GAMEMODE\}\s+\(WorldInfo\.Game\);/);
+});
+
 test('ending warmup keeps the engine call but emits no round zero', () => {
   const {state, sent} = game({round: 0});
   let ended = 0;
