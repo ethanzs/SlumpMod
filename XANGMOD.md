@@ -1632,6 +1632,23 @@ the emit helpers they call (`XangModSendRoundEnd`, `XangModSendRoundStats`) live
 The round-event helpers in `XangModRCon` are `SendRoundStart` / `SendRoundEnd` /
 `SendRoundPlayerStat` / `SendRoundStatEnd`.
 
+The game captures a round result's map, winner, number, scores and final objective state
+when the boundary occurs. If a death caused it, the pawn's `Died` override holds the result
+until the outermost inherited death call returns, so the final victim's death is included.
+It then sends the final objective report (if any) and the complete 66/67/68 burst together,
+without a timer or a new protocol layout. Time limits and administrative ends outside a
+death still report immediately. An end before round 1 emits no competitive result.
+
+Autoskip marks a stage before activating Kismet so synchronous transitions see the mark.
+When no matching event accepts activation, the mark is cleared: a later real completion
+must not be reported as skipped.
+
+`InitRemoteConsole` reuses only a valid XangMod listener. A vanilla listener on the required
+port is retired before a replacement is created; another mod's conflicting listener is
+reported explicitly. `AdminRConStatus` displays the runtime game class and actual
+`RemoteConsole` event target, including whether its native socket is listening. A newly
+spawned actor is reported as waiting to bind, not as ready.
+
 ### CONSOLE_COMMAND is the important one
 
 Scope 1 runs against the **server-side** controller for that player, so it reaches
@@ -2141,6 +2158,33 @@ data issues in weapon and character classes). The useful signal is the *fingerpr
   `Include/Pawn/Animation.uci` — the function is declared to return a `Rotator`, has no
   return statement, and has no callers anywhere in the tree.
 
+### 9.7 Heir RCON regression checks
+
+Run the dependency-free checks from the repository root with Node.js:
+
+```sh
+node --test tests/*.test.mjs
+```
+
+These execute selected UnrealScript function bodies with explicit engine mocks. They
+cover listener selection and status, accepted-session ownership, objective skip outcomes,
+warmup exclusion, nested death finalization, and round/objective metadata. They do not
+compile UnrealScript or replace the dedicated-server checks below.
+
+Before shipping a cooked package:
+
+1. Compile clean and verify the loaded `CookedSDK` package contains
+   `XangModFinishDeathReport` and `XangModCanReuseListener`.
+2. Connect Heir and a second RCON client. Verify both receive complete 65–69 sequences,
+   including after seamless travel and replacement of a carried vanilla listener.
+3. End an LTS round by elimination and suicide, then end a match with a final kill.
+   Compare opcode 67's final victim death count with the live kill feed. Verify one final
+   burst and correct return behavior for a prevented death.
+4. Force a match end during warmup: no round-zero result may appear. Check ordinary
+   timeout/admin ends and the next round's reset as well.
+5. Exercise TO autoskip with absent, rejected, synchronous and asynchronous Kismet events.
+   A later genuine completion after a failed skip must add a completed objective.
+
 ---
 
 ---
@@ -2149,6 +2193,16 @@ data issues in weapon and character classes). The useful signal is the *fingerpr
 
 Chronological history, newest first. Carried over verbatim apart from heading levels
 and two include paths that the September 2026 split renamed.
+
+### Heir RCON event delivery and results (2026-11-02)
+
+**Source checks passed; not yet compiled or tested on a dedicated server.** Heir's event
+target must be a valid XangMod listener, and diagnostics report the actual game and target.
+Round results wait for an in-progress pawn death to finish accounting before their stats
+are sent. Forced warmup ends produce no round-zero result, and a failed objective autoskip
+no longer labels the next real completion as skipped. Packet IDs and field layouts remain
+unchanged. General RCON admin-command fixes, leaver snapshots and capability negotiation
+are outside this patch.
 
 ### TO Elo tags gated on ranked mode (2026-10-20)
 

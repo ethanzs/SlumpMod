@@ -49,6 +49,25 @@ simulated event Tick(float DeltaTime)
 }
 
 
+// Finish Heir's round burst after the entire inherited death path has accounted for
+// this victim. The TD facade and its base can both enter here; the game owns the depth.
+function bool Died(Controller Killer, class<DamageType> DamageType, vector HitLocation)
+{
+    local `{GAMEMODE} ModGame;
+    local bool bReportDeath, bDied;
+
+    ModGame = `{GAMEMODE}(WorldInfo.Game);
+    bReportDeath = ModGame != none && ModGame.XangModRoundReportingEnabled();
+    if (bReportDeath)
+        ModGame.XangModBeginDeathReport();
+
+    bDied = super.Died(Killer, DamageType, HitLocation);
+
+    if (bReportDeath)
+        ModGame.XangModFinishDeathReport();
+    return bDied;
+}
+
 // Owned-actor check, so the parent and gamemode copies of Tick can't spawn two brains.
 function bool XangModHasBrain()
 {

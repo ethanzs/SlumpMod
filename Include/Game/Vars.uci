@@ -36,6 +36,32 @@ var bool bXangModRoundEnding;   // re-entrancy guard for AOCEndRound (LTS draw r
 var bool bXangModMatchEnded;    // set when EndGame emits, suppresses the AOCEndRound emit
 var bool bXangModMatchEndEmitted; // stops a second EndGame call (time limit + admin) re-emitting 66
 
+// A round can end inside Pawn.Died before the last victim's death is accounted for.
+// Hold its metadata until the outermost death call returns, then emit the whole burst.
+var int XangModDeathDepth;
+var bool bXangModRoundEndPending;
+var string XangModPendingMap;
+var int XangModPendingRoundNumber;
+var int XangModPendingWinningTeam;
+var int XangModPendingAgathaScore;
+var int XangModPendingMasonScore;
+var int XangModPendingMatchEnding;
+
+struct XangModObjectiveReport
+{
+    var bool bValid;
+    var string MapName;
+    var int RoundNumber;
+    var int Stage;
+    var int TotalStages;
+    var int Outcome;
+    var int AttackingTeam;
+    var int Completed;
+    var int Skipped;
+    var int SecondsLeft;
+};
+var XangModObjectiveReport XangModPendingObjectiveReport;
+
 // RCON objective reporting (opcode 69), Team Objective only. The counts cover the round
 // being played and are zeroed when round 1 starts. XangModObjSkipMark is the stage index
 // plus one of a stage that a skip was fired on (0 = none), so its end is not reported as

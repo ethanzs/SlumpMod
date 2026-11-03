@@ -93,23 +93,74 @@ function XangModRoundScores(out int AgathaScore, out int MasonScore, out int Goa
     Goal = GoalScore;
 }
 
-/** 66 + a burst of 67s then 68. Called from StartRound/AOCEndRound/EndGame. */
+/** Bracket the entire inherited pawn death path, including nested deaths. */
+function XangModBeginDeathReport()
+{
+    XangModDeathDepth++;
+}
+
+function XangModFinishDeathReport()
+{
+    if (XangModDeathDepth > 0)
+        XangModDeathDepth--;
+    if (XangModDeathDepth == 0)
+        XangModFlushRoundEnd();
+}
+
+/** Capture the boundary now; read player counters after the death path returns. */
 function XangModSendRoundEnd(int WinningTeam, int MatchEnding)
 {
-    local XangModRCon RCon;
     local int AgathaScore, MasonScore, Goal;
+
+    // EndGame can be forced during warmup. It must not invent a round zero result.
+    if (XangModRoundNumber < 1)
+        return;
+
+    if (bXangModRoundEndPending)
+    {
+        if (XangModPendingRoundNumber != XangModRoundNumber)
+            XangModFlushRoundEnd();
+        else if (XangModPendingMatchEnding == 1 || MatchEnding == 0)
+            return;
+        // A final EndGame on the same stack can promote a normal round end.
+    }
+
+    XangModRoundScores(AgathaScore, MasonScore, Goal);
+    XangModPendingMap = XangModRoundMapName();
+    XangModPendingRoundNumber = XangModRoundNumber;
+    XangModPendingWinningTeam = WinningTeam;
+    XangModPendingAgathaScore = AgathaScore;
+    XangModPendingMasonScore = MasonScore;
+    XangModPendingMatchEnding = MatchEnding;
+    XangModPendingObjectiveReport.bValid = false;
+    if (MatchEnding == 1)
+        XangModPendingObjectiveReport = XangModCaptureObjectiveEnd();
+    bXangModRoundEndPending = true;
+
+    // Time limits and admin ends outside a death keep their immediate delivery.
+    if (XangModDeathDepth == 0)
+        XangModFlushRoundEnd();
+}
+
+/** Keep 69 (if present), 66, every 67, and 68 together on the same call stack. */
+function XangModFlushRoundEnd()
+{
+    local XangModRCon RCon;
+
+    if (!bXangModRoundEndPending)
+        return;
+    bXangModRoundEndPending = false;
 
     RCon = XangModRCon(RemoteConsole);
     if (RCon == none)
+    {
+        LogAlwaysInternal("[XangModRCon] Heir round result could not be sent: RemoteConsole is not XangModRCon");
         return;
+    }
 
-    // TO: say how the stage the match ended on finished, so the last 69 before this 66
-    // always holds the totals.
-    if (MatchEnding == 1)
-        XangModSendObjectiveEnd();
-
-    XangModRoundScores(AgathaScore, MasonScore, Goal);
-    RCon.SendRoundEnd(WinningTeam, XangModRoundMapName(), XangModRoundNumber, AgathaScore, MasonScore, MatchEnding);
+    XangModSendObjectiveReport(RCon, XangModPendingObjectiveReport);
+    RCon.SendRoundEnd(XangModPendingWinningTeam, XangModPendingMap, XangModPendingRoundNumber,
+        XangModPendingAgathaScore, XangModPendingMasonScore, XangModPendingMatchEnding);
     XangModSendRoundStats(RCon);
 }
 
@@ -120,20 +171,20 @@ function XangModSendRoundEnd(int WinningTeam, int MatchEnding)
  * running counts include this stage. Nothing is sent outside a real round, for the
  * tutorial, or for any other game mode.
  */
-function XangModSendObjectiveStage(int Stage, bool bMatchEnd)
+function XangModObjectiveReport XangModCaptureObjectiveStage(int Stage, bool bMatchEnd)
 {
     local AOCGame G;
     local AOCTeamObjective TOGame;
-    local XangModRCon RCon;
+    local XangModObjectiveReport Report;
     local int Outcome;
 
     // Same downcast route as XangModRoundReportingEnabled: through an AOCGame local.
     G = self;
     TOGame = AOCTeamObjective(G);
     if (TOGame == none || AOCTUT(G) != none || XangModRoundNumber < 1)
-        return;
+        return Report;
     if (Stage < 0 || Stage >= TOGame.AllObjectives.Length)
-        return;
+        return Report;
 
     // At match end the stage only counts when the map itself declared the attackers the
     // winners (ObjectiveEndGame sets TheWinningTeam). A time-out, or an admin ending the
@@ -151,26 +202,48 @@ function XangModSendObjectiveStage(int Stage, bool bMatchEnd)
         XangModObjSkipped++;
     XangModObjSkipMark = 0;
 
-    RCon = XangModRCon(RemoteConsole);
-    if (RCon == none)
-        return;
-
-    RCon.SendObjectiveStage(XangModRoundMapName(), XangModRoundNumber, Stage + 1, TOGame.AllObjectives.Length,
-        Outcome, XangModRoundTeamIndex(TOGame.AttackingTeam), XangModObjCompleted, XangModObjSkipped, TOGame.TimeLeft);
+    Report.bValid = true;
+    Report.MapName = XangModRoundMapName();
+    Report.RoundNumber = XangModRoundNumber;
+    Report.Stage = Stage + 1;
+    Report.TotalStages = TOGame.AllObjectives.Length;
+    Report.Outcome = Outcome;
+    Report.AttackingTeam = XangModRoundTeamIndex(TOGame.AttackingTeam);
+    Report.Completed = XangModObjCompleted;
+    Report.Skipped = XangModObjSkipped;
+    Report.SecondsLeft = TOGame.TimeLeft;
+    return Report;
 }
 
-/** The 69 for the stage a Team Objective match ended on. Does nothing in other modes. */
-function XangModSendObjectiveEnd()
+function XangModSendObjectiveReport(XangModRCon RCon, XangModObjectiveReport Report)
+{
+    if (RCon == none || !Report.bValid)
+        return;
+    RCon.SendObjectiveStage(Report.MapName, Report.RoundNumber, Report.Stage, Report.TotalStages,
+        Report.Outcome, Report.AttackingTeam, Report.Completed, Report.Skipped, Report.SecondsLeft);
+}
+
+function XangModSendObjectiveStage(int Stage, bool bMatchEnd)
+{
+    local XangModObjectiveReport Report;
+
+    Report = XangModCaptureObjectiveStage(Stage, bMatchEnd);
+    XangModSendObjectiveReport(XangModRCon(RemoteConsole), Report);
+}
+
+/** Capture the final TO stage before the remaining death callbacks can change it. */
+function XangModObjectiveReport XangModCaptureObjectiveEnd()
 {
     local AOCGame G;
     local AOCTeamObjective TOGame;
+    local XangModObjectiveReport Report;
 
     G = self;
     TOGame = AOCTeamObjective(G);
     if (TOGame == none)
-        return;
+        return Report;
 
-    XangModSendObjectiveStage(TOGame.CurrentObjectiveStage, true);
+    return XangModCaptureObjectiveStage(TOGame.CurrentObjectiveStage, true);
 }
 
 /**

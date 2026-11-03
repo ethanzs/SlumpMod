@@ -89,32 +89,101 @@ function SendRankedHelp(AOCPlayerController Asker)
  * Spawn XangMod's remote console instead of the vanilla one. AOCGame.InitRemoteConsole
  * hardcodes Spawn(class'AOCRCon'), so this is the only hook needed -- XangModRCon extends
  * AOCRCon, so vanilla opcodes, auth and the GameEvent_* calls keep working untouched.
- * The AllActors sweep and dedicated-server check are vanilla's, kept verbatim.
+ * Keep a valid XangMod listener across travel. A vanilla listener cannot emit Heir's
+ * round frames, even though its base RCON events still work.
  */
 function InitRemoteConsole(string Options)
 {
 	local AOCRCon RCon;
+	local XangModRCon Listener, Candidate;
+	local int RequiredPort;
+	local bool bPortConflict;
 
 	if (WorldInfo.NetMode != NM_DedicatedServer)
 		return;
 
-	// Reuse the console carried over from before the map change, if there is one.
-	// Sessions are AOCRCon subclasses too, so skip them -- adopting one as RemoteConsole
-	// would point the whole server's event stream at a single client's socket.
-	foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+	// This is the port a newly spawned XangModRCon will use, including inherited config.
+	RequiredPort = class'XangModRCon'.default.RConPort;
+	Listener = XangModRCon(RemoteConsole);
+	if (Listener != none && !Listener.XangModCanReuseListener(RequiredPort))
+		Listener = none;
+	RemoteConsole = none;
+
+	// Selection comes first: another actor's configured port does not prove that it
+	// owns that socket. A working listener must not lose its route because of one.
+	foreach WorldInfo.AllActors(class'XangModRCon', Candidate)
 	{
-		if (XangModRConSession(RCon) != none)
+		if (!Candidate.XangModCanReuseListener(RequiredPort))
 			continue;
-
-		RemoteConsole = RCon;
-		break;
+		if (Listener == none || (!Listener.XangModIsListening() && Candidate.XangModIsListening()))
+			Listener = Candidate;
 	}
 
-	if (RemoteConsole == none)
+	if (Listener == none)
 	{
-		RemoteConsole = Spawn(class'XangModRCon');
-		LogAlwaysInternal("[XangModRCon] remote console started (extended opcodes 23-64 available)");
+		// Check for foreign conflicts before changing any actor. If replacement cannot
+		// proceed, leave every existing socket intact.
+		foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+		{
+			if (RCon.bDeleteMe || XangModRConSession(RCon) != none || RCon.RConPort != RequiredPort)
+				continue;
+
+			if (RCon.Class != class'AOCRCon')
+			{
+				bPortConflict = true;
+				LogAlwaysInternal("[XangModRCon] possible listener conflict: another actor is configured for port"
+					@ RequiredPort @ string(RCon));
+			}
+		}
+
+		if (bPortConflict)
+		{
+			LogAlwaysInternal("[XangModRCon] cannot select a valid listener on port" @ RequiredPort
+				@ "- Heir round telemetry is unavailable; inspect AdminRConStatus and the listener logs");
+			return;
+		}
+
+		// Retire vanilla itself, never another mod's actor or an accepted session.
+		foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+		{
+			if (RCon.bDeleteMe || RCon.Class != class'AOCRCon' || RCon.RConPort != RequiredPort)
+				continue;
+
+			LogAlwaysInternal("[XangModRCon] replacing vanilla listener on port" @ RequiredPort @ string(RCon));
+			RCon.Close();
+			if (!RCon.Destroy())
+			{
+				LogAlwaysInternal("[XangModRCon] failed to retire vanilla listener; Heir round telemetry is unavailable");
+				return;
+			}
+		}
+
+		Listener = Spawn(class'XangModRCon');
 	}
+	else if (!Listener.XangModIsListening())
+	{
+		// Keep the existing bind/retry actor and its event route. Do not create another
+		// listener or destroy unrelated actors merely because their config matches.
+		foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+		{
+			if (RCon != Listener && !RCon.bDeleteMe && XangModRConSession(RCon) == none && RCon.RConPort == RequiredPort)
+				LogAlwaysInternal("[XangModRCon] pending listener: another actor is configured for port"
+					@ RequiredPort @ string(RCon) @ "- inspect socket ownership if binding keeps failing");
+		}
+	}
+
+	if (Listener == none)
+	{
+		LogAlwaysInternal("[XangModRCon] failed to spawn a listener; Heir round telemetry is unavailable");
+		return;
+	}
+
+	RemoteConsole = Listener;
+	if (Listener.XangModIsListening())
+		LogAlwaysInternal("[XangModRCon] game events routed to listening actor" @ string(Listener) @ "on port" @ RequiredPort);
+	else
+		LogAlwaysInternal("[XangModRCon] game events routed to actor" @ string(Listener)
+			@ "- waiting for its listener to bind port" @ RequiredPort);
 
 	// The travel-time push reported the map being left, so announce the real one now that
 	// it is current. Sessions survive travel, so this reaches everyone already connected.

@@ -284,6 +284,8 @@ function StartRound()
     local XangModRCon RCon;
     local int AgathaScore, MasonScore, Goal;
 
+    // Do not let a previous boundary cross the next round's counter reset.
+    XangModFlushRoundEnd();
     super.StartRound();
 
     if (!XangModRoundReportingEnabled())
@@ -312,7 +314,7 @@ function StartRound()
 
 /**
  * Round end. For LTS this fires once per scored round; for TD/TO it fires when the match
- * ends. If EndGame already ran (LTS reaching GoalScore, or any TD/TO end), it emitted 66
+ * ends. If EndGame already ran (LTS reaching GoalScore, or any TD/TO end), it queued 66
  * itself with matchEnding=1, so this stays quiet. The bXangModRoundEnding flag stops
  * AOCLTS's internal draw recursion (AOCLTS.AOCEndRound calls itself) from double-emitting.
  */
@@ -336,8 +338,8 @@ function AOCEndRound()
 }
 
 /**
- * Match end. Fires 66 with matchEnding=1 and the final stat burst, then lets each mode's
- * own EndGame run. Overrides every mode's EndGame, so it is gated the same way as
+ * Match end. Runs each mode's EndGame, then reports 66 with matchEnding=1 and final
+ * stats (after Pawn.Died returns when a death ended it). It is gated the same way as
  * AOCEndRound; non-reporting modes still get super.EndGame and nothing else.
  */
 function EndGame(PlayerReplicationInfo Winner, string Reason)

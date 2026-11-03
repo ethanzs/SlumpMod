@@ -277,6 +277,22 @@ function XangModNoteAuthFailure(string Reason)
 	Listener.XangModLastAuthFailure = XangModRemote @ "-" @ Reason;
 }
 
+/** A game may retain this listener through travel, but never an accepted session. */
+function bool XangModCanReuseListener(int RequiredPort)
+{
+	return !bDeleteMe && XangModRConSession(self) == none && ParentLink == none
+		&& RConPort == RequiredPort && AcceptClass == class'XangModRConSession'
+		&& (RConState == RCON_Initialized || XangModIsListening());
+}
+
+/** A spawned actor is not ready until the native socket is listening on the configured port. */
+function bool XangModIsListening()
+{
+	return !bDeleteMe && XangModRConSession(self) == none && ParentLink == none
+		&& RConState == RCON_Listening && LinkState == STATE_Listening
+		&& AcceptClass == class'XangModRConSession' && XangModBoundPort == RConPort;
+}
+
 function string XangModStateName()
 {
 	switch (RConState)
@@ -330,18 +346,25 @@ function XangModRCon XangModShared()
 }
 
 /**
- * The listener is the one XangModRCon that is not a session. Found by sweep rather than
- * read off GameInfo.RemoteConsole, which cannot be trusted -- see XangModRConSession.
+ * TcpLink makes the accepting listener the session's owner. Preserve that association
+ * when several listeners exist; a global sweep could attach this socket to another port.
+ * The game's validated event target is a fallback if ownership is not available yet.
  */
 function XangModRCon XangModFindListener()
 {
-	local XangModRCon RCon;
+	local XangModRCon Listener;
+	local AOCGame Game;
 
-	foreach WorldInfo.AllActors(class'XangModRCon', RCon)
-	{
-		if (XangModRConSession(RCon) == none)
-			return RCon;
-	}
+	Listener = XangModRCon(Owner);
+	if (Listener != none && Listener.XangModCanReuseListener(Listener.RConPort))
+		return Listener;
+
+	Game = AOCGame(WorldInfo.Game);
+	if (Game == none)
+		return none;
+	Listener = XangModRCon(Game.RemoteConsole);
+	if (Listener != none && Listener.XangModCanReuseListener(RConPort))
+		return Listener;
 
 	return none;
 }
