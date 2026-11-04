@@ -37,6 +37,8 @@ var float fMaxPlausibleLatency;        // clamp for reconstructed action times (
 var float fRecentHitTTL;               // how long a taken hit stays eligible to cancel a trade swing
 var float fClockOffsetAlpha;           // EMA weight for new clock-offset samples
 var bool  bEnableTradeCancellation;    // master toggle: whether hit-trade cancellation is active
+var float fParryTurnCompMaxLeadSeconds;   // cap on how far ahead (s) a turning defender's facing is predicted
+var float fParryTurnCompMaxExtrapDegrees; // cap on the predicted extra turn (deg)
 
 var AOCPawn StoredFirebugHitActor;     // cached victim for delayed Firebug ignition timer
 

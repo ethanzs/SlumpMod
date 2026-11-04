@@ -606,6 +606,42 @@ reliable server function S_AdminParryCone(float fDegrees) {
 		S_AdminBroadcastMessage("Parry cone set to" @ fDegrees $ " degrees", false);
 }
 
+// Opt-in parry turn compensation. Default OFF. No argument reports the state; true/false sets it.
+// When on, a melee swing that misses the defender's server-side facing cone is re-tested against
+// where the defender is already turning to (bounded prediction), so turning into a parry works.
+exec function AdminParryTurnComp(optional string sValue = "")
+{
+	if (!PlayerReplicationInfo.bAdmin) {
+		ClientDisplayConsoleMessage("You are not logged in as an administrator on this server.");
+		return;
+	}
+	S_AdminParryTurnComp(sValue);
+}
+
+reliable server function S_AdminParryTurnComp(string sValue) {
+	local bool bEnable;
+
+	if (!IsAdmin())
+		return;
+
+	sValue = Locs(sValue);
+	if (sValue == "") {
+		S_AdminBroadcastMessage("Parry turn compensation is currently" @ (class'XangModAOCDuelPlayerController'.default.bXangModParryTurnComp ? "ON" : "OFF"), false);
+		return;
+	}
+
+	bEnable = (sValue == "true" || sValue == "1" || sValue == "on");
+	if (!bEnable && !(sValue == "false" || sValue == "0" || sValue == "off")) {
+		S_AdminBroadcastMessage("Usage: AdminParryTurnComp [true|false]", false);
+		return;
+	}
+
+	class'XangModAOCDuelPlayerController'.default.bXangModParryTurnComp = bEnable;
+	class'XangModAOCDuelPlayerController'.static.StaticSaveConfig();
+
+	S_AdminBroadcastMessage("Parry turn compensation" @ (bEnable ? "enabled" : "disabled"), false);
+}
+
 // CE Autoskip: auto-fires "ce skip" when TO timer reaches 5 seconds
 exec function AdminCEAutoskip()
 {

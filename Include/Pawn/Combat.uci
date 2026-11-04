@@ -163,6 +163,8 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	local float AttackerDot;
 	local float ConeDegrees;
 	local float ConeDot;
+	local XangModPawn DefenderBM;
+	local vector PredictedForward;
 
 	if (Info.HitActor == none || Info.DamageType == none || Info.DamageType.default.bIsProjectile)
 		return false;
@@ -198,6 +200,21 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 	AttackerOffset.Z = 0.0f;
 	AttackerDot = VSize(AttackerOffset) > 1.0f ? (Normal(AttackerOffset) dot DefenderForward) : -1.0f;
 
+	if ((HitDot >= ConeDot) || (AttackerDot >= ConeDot))
+		return true;
+
+	// Opt-in turn compensation (AdminParryTurnComp, default off): the defender's server facing lags
+	// their own screen, so re-test against where they are already turning to. Only reached when
+	// the plain cone failed, so it can only turn a miss into a parry, never the reverse.
+	if (!class'XangModAOCDuelPlayerController'.default.bXangModParryTurnComp)
+		return false;
+
+	DefenderBM = XangModPawn(Info.HitActor);
+	if (DefenderBM == none || !DefenderBM.GetPredictedParryForward(PredictedForward))
+		return false;
+
+	HitDot = VSize(HitOffset) > 1.0f ? (Normal(HitOffset) dot PredictedForward) : -1.0f;
+	AttackerDot = VSize(AttackerOffset) > 1.0f ? (Normal(AttackerOffset) dot PredictedForward) : -1.0f;
 	return (HitDot >= ConeDot) || (AttackerDot >= ConeDot);
 }
 

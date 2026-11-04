@@ -264,6 +264,77 @@ function ResolvePendingHitsAsParry(optional float fParryActionServerTime = 0.0)
 
 
 
+// XANGMOD: Parry turn compensation (opt-in via AdminParryTurnComp). The server only knows this
+// pawn's facing as of its last move packet, so a defender who turns toward an attacker after
+// raising their parry is still "facing away" server-side when the swing resolves, even though
+// their own screen already shows the block. Server, per tick, only while the option is on.
+function RecordParryYawSample()
+{
+	local ParryYawSample S;
+	local float fNow;
+
+	fNow = WorldInfo.TimeSeconds;
+	while (ParryYawSamples.Length > 0 && ParryYawSamples[0].fTime < fNow - 0.3)
+		ParryYawSamples.Remove(0, 1);
+
+	S.fTime = fNow;
+	S.iYaw = Rotation.Yaw & 65535;
+	ParryYawSamples.AddItem(S);
+}
+
+// Predict this pawn's facing one defender-one-way-latency ahead of the server's latest sample, by
+// extrapolating the recent yaw velocity. The extra turn is capped, so it only widens the
+// verdict by a bounded amount. Returns false when there is no fresh turn data.
+function bool GetPredictedParryForward(out vector OutForward)
+{
+	local ParryYawSample Newest, Oldest;
+	local int i, iOldest, iDelta;
+	local float fNow, fDt, fLead, fDegPerSec, fExtraDeg;
+	local rotator R;
+
+	if (ParryYawSamples.Length < 2)
+		return false;
+
+	fNow = WorldInfo.TimeSeconds;
+	Newest = ParryYawSamples[ParryYawSamples.Length - 1];
+	if (fNow - Newest.fTime > 0.1)
+		return false;
+
+	// Oldest sample inside the last 120 ms gives the turn velocity.
+	iOldest = -1;
+	for (i = 0; i < ParryYawSamples.Length - 1; i++)
+	{
+		if (fNow - ParryYawSamples[i].fTime <= 0.12)
+		{
+			iOldest = i;
+			break;
+		}
+	}
+	if (iOldest < 0)
+		return false;
+
+	Oldest = ParryYawSamples[iOldest];
+	fDt = Newest.fTime - Oldest.fTime;
+	if (fDt < 0.03)
+		return false;
+
+	iDelta = (Newest.iYaw - Oldest.iYaw) & 65535;
+	if (iDelta > 32767)
+		iDelta -= 65536;
+
+	fDegPerSec = (float(iDelta) * 360.0 / 65536.0) / fDt;
+	fLead = FMin(GetOneWayPingSeconds(), fParryTurnCompMaxLeadSeconds);
+	fExtraDeg = FClamp(fDegPerSec * fLead, -fParryTurnCompMaxExtrapDegrees, fParryTurnCompMaxExtrapDegrees);
+
+	R.Yaw = Newest.iYaw + int(fExtraDeg * 65536.0 / 360.0);
+	OutForward = vector(R);
+	OutForward.Z = 0.0;
+	if (VSize(OutForward) <= 0.0)
+		return false;
+	OutForward = Normal(OutForward);
+	return true;
+}
+
 // Netcode optimization: Maximum performance for all pawns
 // 120Hz update frequency for all distances
 event float GetNetPriority(Actor Viewer, vector ViewLocation, float ViewDist)

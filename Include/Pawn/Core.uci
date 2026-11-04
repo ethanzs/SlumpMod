@@ -12,7 +12,14 @@ simulated event Tick(float DeltaTime)
 
 	// XANGMOD: commit any held swings whose latency window elapsed without a parry.
 	if (Role == ROLE_Authority)
+	{
 		ProcessPendingHits();
+		// Opt-in (AdminParryTurnComp): keep a short server-side yaw history for turn prediction.
+		if (class'XangModAOCDuelPlayerController'.default.bXangModParryTurnComp)
+			RecordParryYawSample();
+		else if (ParryYawSamples.Length > 0)
+			ParryYawSamples.Length = 0;
+	}
 
 	// XANGMOD: any combat-AI pawn gets the bot brain, whatever controller class the map spawned it with.
 	if (Role == ROLE_Authority && Health > 0 && WorldInfo.TimeSeconds >= fXangModBrainCheckAt && AOCAICombatController(Controller) != none)

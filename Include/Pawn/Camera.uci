@@ -320,6 +320,10 @@ DefaultProperties
 	fClockOffsetAlpha=0.10         // EMA weight for per-message clock-offset samples
 	bEnableTradeCancellation=true  // master toggle: hit-trade cancellation; false disables it
 
+	// Parry turn compensation (only used when AdminParryTurnComp is on; default off).
+	fParryTurnCompMaxLeadSeconds=0.150
+	fParryTurnCompMaxExtrapDegrees=60.0
+
 	// Riposte flinch immunity grace period - 300ms after successful parry
 	// Prevents flinch during Parry->ParryRelease state transition (network desync)
 	// Increased from 200ms to 300ms for better high-ping protection

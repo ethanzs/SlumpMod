@@ -39,6 +39,15 @@ struct RecentIncomingHit
 };
 var array<RecentIncomingHit> RecentIncomingHits;  // hits we recently took, kept for fRecentHitTTL
 
+// XANGMOD: Parry turn compensation (opt-in, AdminParryTurnComp). Server-side history of this
+// pawn's body yaw, used to predict where a turning defender is already facing on their own screen.
+struct ParryYawSample
+{
+    var float fTime;                    // WorldInfo.TimeSeconds when sampled (server)
+    var int iYaw;                       // Rotation.Yaw & 65535
+};
+var array<ParryYawSample> ParryYawSamples;
+
 // XANGMOD: Grand Lance stab charge — weapon requests forced sprint+forward lock.
 var bool bForceSprintForward;
 var float fForceSprintForwardSpeedMult;  // multiplier on sprint speed (1.0 = normal)
