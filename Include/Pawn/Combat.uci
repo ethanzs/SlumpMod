@@ -180,10 +180,10 @@ simulated function bool XangModDirectionalMeleeParry(HitInfo Info) {
 		return false;
 
 	// Defender's front parry cone, admin-tunable server-wide via AdminParryCone.
-	// Default 110 degrees total (~55 deg half-angle, dot >= cos(55deg) ~ 0.5736).
+	// Default 160 degrees total (~80 deg half-angle, dot >= cos(80deg) ~ 0.1736).
 	ConeDegrees = class'XangModAOCDuelPlayerController'.default.fXangModParryConeDegrees;
 	if (ConeDegrees <= 0.0f)
-		ConeDegrees = 110.0f;
+		ConeDegrees = 160.0f;
 	ConeDegrees = FMin(ConeDegrees, 180.0f);
 	ConeDot = Cos((ConeDegrees * 0.5f) * Pi / 180.0f);
 

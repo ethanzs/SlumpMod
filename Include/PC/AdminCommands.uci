@@ -572,7 +572,7 @@ reliable server function S_AdminOverrideParryKnockback(float fMultiplier) {
 }
 
 // Server-wide directional melee parry cone, in total degrees. No argument = report current value.
-// 110 is the shipped default; 180 is a full front hemisphere; 30 is very tight.
+// 160 is the shipped default; 180 is a full front hemisphere; 30 is very tight.
 exec function AdminParryCone(optional float fDegrees = -1.0)
 {
 	if (!PlayerReplicationInfo.bAdmin) {
@@ -600,8 +600,8 @@ reliable server function S_AdminParryCone(float fDegrees) {
 
 	XangModSyncParryConeToAll(fDegrees);
 
-	if (fDegrees == 110.0)
-		S_AdminBroadcastMessage("Parry cone reset to default (110 degrees)", false);
+	if (fDegrees == 160.0)
+		S_AdminBroadcastMessage("Parry cone reset to default (160 degrees)", false);
 	else
 		S_AdminBroadcastMessage("Parry cone set to" @ fDegrees $ " degrees", false);
 }

@@ -194,8 +194,8 @@ DefaultProperties
 	fFeintRecoveryMultiplier=1.0
 	// Parry knockback multiplier default (1.0 = vanilla)
 	fParryKnockbackMultiplier=1.0
-	// Directional melee parry cone default (total degrees; 110 = ~55 deg half-angle)
-	fXangModParryConeDegrees=110.0
+	// Directional melee parry cone default (total degrees; 160 = ~80 deg half-angle)
+	fXangModParryConeDegrees=160.0
 	// Parry turn compensation default: ON (disable with AdminParryTurnComp false)
 	bXangModParryTurnComp=true
 

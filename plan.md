@@ -100,10 +100,10 @@ That is equivalent to 180 degrees: 90 degrees left/right/up/down from the defend
 If this is too forgiving, narrow it later with a constant:
 
 ```text
-160 degrees total: dot >= cos(80 degrees) ~= 0.1736
+160 degrees total: dot >= cos(80 degrees) ~= 0.1736  <- current default
 140 degrees total: dot >= cos(70 degrees) ~= 0.3420
 120 degrees total: dot >= cos(60 degrees) = 0.5
-110 degrees total: dot >= cos(55 degrees) ~= 0.5736  <- current default
+110 degrees total: dot >= cos(55 degrees) ~= 0.5736
 
 The value is no longer a source constant: it is the `globalconfig` float
 `fXangModParryConeDegrees` on `XangModAOCDuelPlayerController`, read at hit-resolution
