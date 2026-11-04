@@ -26,7 +26,7 @@ var globalconfig bool bXangModGoFast;  // When true, shortens sprint ramp-up per
 var globalconfig float fXangModCollisionRadius;  // Radius of the player collision bubble; vanilla AOC default is 39.0
 var globalconfig float fFeintRecoveryMultiplier;  // Global feint-recovery multiplier (1.0 = vanilla; AdminOverrideFeintRecovery)
 var globalconfig float fParryKnockbackMultiplier;  // Global parry knockback multiplier (1.0 = vanilla; AdminOverrideParryKnockback)
-var globalconfig bool bXangModParryTurnComp;  // Opt-in (default false): also test the parry cone against the defender's predicted turn (AdminParryTurnComp)
+var globalconfig bool bXangModParryTurnComp;  // Default true: also test the parry cone against the defender's predicted turn (AdminParryTurnComp)
 var globalconfig float fXangModParryConeDegrees;  // Total front parry cone in degrees (110 = default; AdminParryCone). 180 = full hemisphere
 
 // XANGMOD: Persisted client-clock offset (server-only) for the hit-trade timestamp system.

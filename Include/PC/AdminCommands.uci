@@ -606,7 +606,7 @@ reliable server function S_AdminParryCone(float fDegrees) {
 		S_AdminBroadcastMessage("Parry cone set to" @ fDegrees $ " degrees", false);
 }
 
-// Opt-in parry turn compensation. Default OFF. No argument reports the state; true/false sets it.
+// Parry turn compensation. Default ON. No argument reports the state; true/false sets it.
 // When on, a melee swing that misses the defender's server-side facing cone is re-tested against
 // where the defender is already turning to (bounded prediction), so turning into a parry works.
 exec function AdminParryTurnComp(optional string sValue = "")

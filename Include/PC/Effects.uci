@@ -196,8 +196,8 @@ DefaultProperties
 	fParryKnockbackMultiplier=1.0
 	// Directional melee parry cone default (total degrees; 110 = ~55 deg half-angle)
 	fXangModParryConeDegrees=110.0
-	// Parry turn compensation default: OFF (enable with AdminParryTurnComp)
-	bXangModParryTurnComp=false
+	// Parry turn compensation default: ON (disable with AdminParryTurnComp false)
+	bXangModParryTurnComp=true
 
 }
 
