@@ -163,13 +163,14 @@ test('an existing initialized listener remains the pending route beside an unrel
   assert.equal(foreign.bDeleteMe,false);assert.equal(actions(env,'spawn').length,0);
   assert.ok(actions(env,'log').some(([,line])=>/another actor.*configured|configured.*another actor/i.test(line)));
 });
-test('a native ready listener takes precedence over an initialized current target', () => {
+test('a native ready listener takes precedence over an initialized current target, which is retired', () => {
   const env=environment();const pending=env.add('mod',{RConState:RCON_Initialized,LinkState:'STATE_Initialized',XangModBoundPort:0});
   const ready=env.add('mod');env.scope.RemoteConsole=pending;
-  assert.equal(env.run(),ready);assert.equal(pending.bDeleteMe,false);
-  assert.equal(actions(env,'spawn').length,0);assert.equal(actions(env,'destroy').length,0);
+  assert.equal(env.run(),ready);assert.equal(pending.bDeleteMe,true);
+  assert.equal(actions(env,'spawn').length,0);
+  assert.deepEqual(actions(env,'destroy').map(([,actor])=>actor),[pending]);
 });
-test('a session or a wrong-port custom listener is never adopted', () => {
+test('a session or a listener not bound to its own configured port is never adopted', () => {
   const env=environment(); env.add('session');const other=env.add('mod',{RConPort:29000});
   assert.equal(env.run()?.RConPort,27960);
   assert.equal(other.bDeleteMe,false);
@@ -241,7 +242,8 @@ test('a session without its owner falls back to the validated game event target'
   const env=environment();env.add('mod',{RConPort:29000});const actual=env.add('mod');
   env.scope.WorldInfo.Game={isAOCGame:true,RemoteConsole:actual};
   assert.equal(findListener({...env.scope,RConPort:27960,Owner:null}),actual);
-  assert.equal(findListener({...env.scope,RConPort:29000,Owner:null}),null);
+  // A session's own RConPort is the class default and says nothing about the listener.
+  assert.equal(findListener({...env.scope,RConPort:29000,Owner:null}),actual);
 });
 test('deleted listeners and accepted sessions cannot become a session parent', () => {
   const env=environment();const deleted=env.add('mod',{bDeleteMe:true});const session=env.add('session');
@@ -256,4 +258,55 @@ test('readiness checks native state, bound port and the accepting class', () => 
     assert.equal(actor.XangModIsListening(),false);
     assert.equal(actor.XangModCanReuseListener(27960),false);
   }
+});
+
+// Production, 4-7 November 2026: hosts whose live listener port (5557) differed from the
+// class default lost every game event after the first map change and dropped clients on
+// each one after that. Listeners must be judged by their own port.
+const hostPort = {RConPort: 5557, XangModBoundPort: 5557};
+test('travel keeps a listener whose runtime port differs from the class default, with its sessions', () => {
+  const env = environment(), active = env.add('mod', hostPort);
+  const session = env.add('session', {ParentLink: active, RConPort: 27960}); active.Sessions.push(session);
+  env.scope.RemoteConsole = active;
+  assert.equal(env.run(), active);
+  assert.deepEqual(active.Sessions, [session]);
+  assert.equal(actions(env,'spawn').length, 0); assert.equal(actions(env,'destroy').length, 0);
+  assert.equal(actions(env,'map')[0][1], active);
+});
+test('a carried listener is found by sweep when the new game has no event target yet', () => {
+  const env = environment(), active = env.add('mod', hostPort);
+  active.Sessions.push(env.add('session', {ParentLink: active}));
+  assert.equal(env.run(), active);
+  assert.equal(actions(env,'spawn').length, 0);
+});
+test('the listener holding the socket and sessions wins over the empty target left by the old rule', () => {
+  const env = environment(), holding = env.add('mod', hostPort);
+  holding.Sessions.push(env.add('session', {ParentLink: holding}));
+  const empty = env.add('mod', {RConPort: 5557, RConState: RCON_Initialized, LinkState: 'STATE_Initialized', XangModBoundPort: 0});
+  env.scope.RemoteConsole = empty;
+  assert.equal(env.run(), holding);
+  assert.equal(empty.bDeleteMe, true);
+  assert.equal(actions(env,'spawn').length, 0);
+  assert.equal(actions(env,'map')[0][1], holding);
+});
+test('between two pending listeners the one with sessions is kept and the idle one retired', () => {
+  const env = environment(), pending = {RConPort: 5557, RConState: RCON_Initialized, LinkState: 'STATE_Initialized', XangModBoundPort: 0};
+  const idle = env.add('mod', pending), withSessions = env.add('mod', pending);
+  withSessions.Sessions.push(env.add('session', {ParentLink: withSessions}));
+  env.scope.RemoteConsole = idle;
+  assert.equal(env.run(), withSessions);
+  assert.equal(idle.bDeleteMe, true);
+});
+test('a listener on another port is never retired as a duplicate', () => {
+  const env = environment(), active = env.add('mod', hostPort);
+  const elsewhere = env.add('mod', {RConPort: 6000, RConState: RCON_Initialized, LinkState: 'STATE_Initialized', XangModBoundPort: 0});
+  env.scope.RemoteConsole = active;
+  assert.equal(env.run(), active);
+  assert.equal(elsewhere.bDeleteMe, false);
+  assert.equal(actions(env,'destroy').length, 0);
+});
+test('a session attaches to a non-default-port target when ownership is unavailable', () => {
+  const env = environment(), actual = env.add('mod', hostPort);
+  env.scope.WorldInfo.Game = {isAOCGame: true, RemoteConsole: actual};
+  assert.equal(findListener({...env.scope, RConPort: 27960, Owner: null}), actual);
 });

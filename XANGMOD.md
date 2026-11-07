@@ -1643,11 +1643,19 @@ Autoskip marks a stage before activating Kismet so synchronous transitions see t
 When no matching event accepts activation, the mark is cleared: a later real completion
 must not be reported as skipped.
 
-`InitRemoteConsole` reuses only a valid XangMod listener. A vanilla listener on the required
-port is retired before a replacement is created; another mod's conflicting listener is
-reported explicitly. `AdminRConStatus` displays the runtime game class and actual
-`RemoteConsole` event target, including whether its native socket is listening. A newly
-spawned actor is reported as waiting to bind, not as ready.
+`InitRemoteConsole` reuses only a valid XangMod listener, judged by its own port. A live
+listener's port can differ from `class'XangModRCon'.default.RConPort` (a host can set it
+outside this class's config), so the class default is only the port a new listener starts
+with, never the test for reuse. Comparing against it rejected the carried listener on every
+map change: a second actor became the event target with no sessions, clients stopped
+receiving game events (kills, team changes, chat, round ends) and were dropped at the next
+travel. Among several XangMod listeners the one holding the socket wins, then the one
+holding sessions; an idle duplicate on the same port (never bound, no sessions) is retired
+so it cannot take the port later. A vanilla listener on the required port is retired before
+a replacement is created; another mod's conflicting listener is reported explicitly.
+`AdminRConStatus` displays the runtime game class and actual `RemoteConsole` event target,
+including whether its native socket is listening, its configured and bound ports and the
+class default port. A newly spawned actor is reported as waiting to bind, not as ready.
 
 ### CONSOLE_COMMAND is the important one
 
