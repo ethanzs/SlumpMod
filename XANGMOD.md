@@ -1644,26 +1644,48 @@ When no matching event accepts activation, the mark is cleared: a later real com
 must not be reported as skipped.
 
 `InitRemoteConsole` reuses only a valid XangMod listener, judged by its own configured port.
-The class default determines the port of a new listener. If an existing instance's port
-differs from that default, comparing against the default can reject a carried listener and
-route game events away from its sessions. Ordinary INI configuration also sets class
-defaults, so a nonstandard endpoint port alone does not establish such a mismatch.
+If an existing instance's port differs from the class default, comparing against the
+default can reject a carried listener and route game events away from its sessions.
+Ordinary INI configuration also sets class defaults, so a nonstandard endpoint port alone
+does not establish such a mismatch.
 
-Among valid candidates, a listening actor wins, then the one holding more sessions. A
-duplicate on the same port is retired only when it has no sessions and both its script
-state and native socket state are initialized (`RCON_Initialized`, `STATE_Initialized`).
-The selected listener, session subclasses, and actors with a `ParentLink` are protected.
-Other duplicates are logged and left in place, including native listeners whose metadata
-fails the reuse checks. A vanilla listener on the required port is retired before a
-replacement is created; another mod's conflicting listener is reported explicitly.
+Hosts may keep `ChivAdmin.ChivAdminMutator` installed. ChivAdmin installs its RCON actor
+before SlumpMod initializes RCON. SlumpMod recognizes the exact package-qualified class
+name `ChivAdmin.ChivAdminRCon` without a compile-time dependency on that package and
+replaces its RCON actor with XangMod's listener. On first takeover it preserves the
+ChivAdmin instance's configured port, even when XangMod's class default differs. An empty
+pending XangMod actor on the default port cannot divert that takeover. A working carried
+XangMod listener keeps its port and sessions when the mutator initializes again after
+travel. The known ChivAdmin socket is closed and its actor destroyed; an existing legacy
+connection may need to reconnect once during first takeover.
+
+Among valid XangMod candidates, a listening actor wins, then the one holding more sessions.
+An XangMod duplicate on the same port is retired only when it has no sessions and both its
+script state and native socket state are initialized (`RCON_Initialized`,
+`STATE_Initialized`). The selected listener, session subclasses, and actors with a
+`ParentLink` are protected. Other XangMod duplicates are logged and left in place, including
+native listeners whose metadata fails the reuse checks. Vanilla and the recognized
+ChivAdmin listener have explicit replacement paths; unrelated mods' listeners remain
+protected by the foreign-conflict checks.
+
 `AdminRConStatus` displays the runtime game class and actual `RemoteConsole` event target,
 including its readiness, configured and recorded bound ports, and the class default port.
-A newly spawned actor is reported as waiting to bind, not as ready.
+A newly spawned actor is reported as waiting to bind, not as ready. Use this command after
+takeover: ChivAdmin's `mutate debug0`, `debug10`, and `debug20` require its own RCON class
+and do not control the XangMod replacement.
 
-The cause of the November 4–7, 2026 telemetry outage remains unconfirmed. The inspected
-ping path also uses `Game.RemoteConsole`, so an empty event target would suppress pings
-too. Confirm the deployed code, instance/default ports, and actor ownership across travel
-before attributing that incident to this port comparison.
+The November 4–7, 2026 investigation found a separate ChivAdmin event path: its five-second
+timer sends scoreboard pings directly, and its map announcements use a ten-second timer.
+The official Workshop bytecode matches the affected captures. Rejecting ChivAdmin as a
+foreign listener can therefore remove the game's event destination while those independent
+pings continue. Reusing XangMod listeners by their own port alone does not resolve this
+conflict. The compatibility takeover restores a single XangMod destination for ordinary
+game events and custom round reporting.
+
+Build with UDK and test the mixed-mutator setup on a dedicated server before release.
+Verify the configured port on cold start, then carry two RCON clients through two seamless
+map changes and check that both receive kill and round frames. Source-extracted tests do
+not validate native socket release, binding, or travel behavior.
 
 ### CONSOLE_COMMAND is the important one
 

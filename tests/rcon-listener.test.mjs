@@ -35,10 +35,17 @@ function compile(source, name, optional = false) {
     .replace(/foreach\s+WorldInfo\.AllActors\(class'(\w+)',\s*(\w+)\)/g, 'for ($2 of WorldInfo.AllActors(classes.$1))')
     .replace(/foreach\s+Lines\(Line\)/g, 'for (Line of Lines)')
     .replace(/class'(\w+)'/g, 'classes.$1')
+    .replace(/new classes\.(\w+)\b/g, 'new classes.$1()')
     .replace(/\bnone\b/g, 'null')
+    .replace(/\bsuper\./g, 'engine.')
     .replace(/\bstring\(/g, 'String(')
+    .replace(/String\(([^)]+)\)\s*~=\s*("[^"]+")/g, '(String($1).toLowerCase() === $2.toLowerCase())')
     .replace(/\.Length\b/g, '.length')
     .replace(/\.AddItem\(/g, '.push(')
+    .replace(/\.Remove\(/g, '.splice(')
+    // UnrealScript dynamic-array assignments copy values; JS assignments would alias.
+    .replace(/Payload = Packet\.Buffer;/g, 'Payload = Packet.Buffer.slice();')
+    .replace(/Packet\.Buffer = Payload;/g, 'Packet.Buffer = Payload.slice();')
     .replace(/\s@\s/g, ' + " " + ')
     .replace(/\s\$\s/g, ' + ');
   // Bare locals have Unreal's zero/none defaults; mock actor reference locals
@@ -53,15 +60,20 @@ const serverSource = read('Include/Game/Server.uci');
 const rconSource = read('Classes/XangModRCon.uc');
 const adminSource = read('Include/PC/AdminCommands.uci');
 const init = compile(serverSource, 'InitRemoteConsole');
+const isChivAdmin = compile(serverSource, 'XangModIsChivAdminListener', true);
 const status = compile(adminSource, 'ServerAdminRConStatus');
 const reusable = compile(rconSource, 'XangModCanReuseListener', true);
 const listening = compile(rconSource, 'XangModIsListening', true);
 const idleListener = compile(rconSource, 'XangModIsIdleListener', true);
 const findListener = compile(rconSource, 'XangModFindListener');
+const travelActors = compile(serverSource, 'GetSeamlessTravelActorList');
+const sendPacket = compile(rconSource, 'SendPacket');
+const sendRoundEnd = compile(rconSource, 'SendRoundEnd');
 const classes = {
   AOCRCon: {name: 'AOCRCon', default: {RConPort: 27960}},
   XangModRCon: {name: 'XangModRCon', default: {RConPort: 27960}},
   XangModRConSession: {name: 'XangModRConSession'},
+  ChivAdminRCon: {name: 'ChivAdmin.ChivAdminRCon'},
   OtherRCon: {name: 'OtherRCon'}
 };
 for (const entry of Object.values(classes)) entry.toString = () => entry.name;
@@ -73,7 +85,7 @@ function environment(options = {}) {
   const events = [], actors = [];
   const scope = {
     classes, NM_DedicatedServer: 'dedicated', RemoteConsole: null,
-    XangModRCon: cast, XangModRConSession: sessionCast,
+    AOCRCon: actor => actor, XangModRCon: cast, XangModRConSession: sessionCast,
     AOCGame: value => value?.isAOCGame ? value : null,
     GetCurrentMap: () => 'AOCLTS-Moor_p', MapCycleIndex: 0,
     LogAlwaysInternal: message => events.push(['log', message]),
@@ -88,9 +100,10 @@ function environment(options = {}) {
       return add('mod', {RConState: RCON_Initialized, LinkState: 'STATE_Initialized', XangModBoundPort: 0});
     }
   };
+  scope.XangModIsChivAdminListener = RCon => isChivAdmin?.({...scope, RCon}) ?? false;
   function add(kind, props = {}) {
     const actor = {
-      kind, Class: classes[kind === 'mod' ? 'XangModRCon' : kind === 'session' ? 'XangModRConSession' : kind === 'foreign' ? 'OtherRCon' : 'AOCRCon'],
+      kind, Class: classes[kind === 'mod' ? 'XangModRCon' : kind === 'session' ? 'XangModRConSession' : kind === 'foreign' ? 'OtherRCon' : kind === 'chivadmin' ? 'ChivAdminRCon' : 'AOCRCon'],
       RConPort: 27960, XangModBoundPort: 27960, bDeleteMe: false, ParentLink: null,
       AcceptClass: classes.XangModRConSession, RConState: RCON_Listening, LinkState: STATE_Listening, Sessions: [],
       Close() {events.push(['close', this]); return true;},
@@ -335,3 +348,216 @@ for (const [name, props] of [
     assert.ok(actions(env, 'log').some(([, line]) => /left in place/.test(line)));
   });
 }
+
+// ChivAdmin.InitMutator runs before the game's InitRemoteConsole and installs its own
+// AOCRCon subclass. These tests model that startup order without loading the Workshop.
+for (const port of [27960, 5557]) {
+  test(`ChivAdmin takeover preserves its configured port ${port}`, () => {
+    const env = environment();
+    const old = env.add('chivadmin', {RConPort: port, RConState: RCON_Initialized, LinkState: STATE_Initialized});
+    env.scope.RemoteConsole = old;
+    const selected = env.run();
+    assert.equal(selected?.kind, 'mod');
+    assert.equal(selected.RConPort, port);
+    assert.equal(selected.XangModIsListening(), false);
+    assert.equal(old.bDeleteMe, true);
+    assert.equal(actions(env, 'spawn').length, 1);
+    const order = env.events.map(([event]) => event);
+    assert.ok(order.indexOf('close') < order.indexOf('destroy'));
+    assert.ok(order.indexOf('destroy') < order.indexOf('spawn'));
+    assert.equal(actions(env, 'map')[0][1], selected);
+  });
+}
+
+test('ChivAdmin takeover finds the known listener when the game target is unset', () => {
+  const env = environment();
+  const old = env.add('chivadmin', {RConPort: 5557});
+  const selected = env.run();
+  assert.equal(selected?.RConPort, 5557);
+  assert.equal(old.bDeleteMe, true);
+});
+
+test('ChivAdmin takeover is not diverted by an empty pending class-default listener', () => {
+  const env = environment();
+  const stale = env.add('mod', {RConState: RCON_Initialized, LinkState: STATE_Initialized, XangModBoundPort: 0});
+  const old = env.add('chivadmin', {RConPort: 5557});
+  env.scope.RemoteConsole = old;
+  const selected = env.run();
+  assert.equal(selected?.RConPort, 5557);
+  assert.notEqual(selected, stale);
+  assert.equal(old.bDeleteMe, true);
+});
+
+test('ChivAdmin takeover adopts a matching pending listener instead of spawning another', () => {
+  const env = environment();
+  env.add('mod', {RConState: RCON_Initialized, LinkState: STATE_Initialized, XangModBoundPort: 0});
+  const pending = env.add('mod', {RConPort: 5557, RConState: RCON_Initialized, LinkState: STATE_Initialized, XangModBoundPort: 0});
+  const old = env.add('chivadmin', {RConPort: 5557});
+  env.scope.RemoteConsole = old;
+  assert.equal(env.run(), pending);
+  assert.equal(old.bDeleteMe, true);
+  assert.equal(actions(env, 'spawn').length, 0);
+});
+
+for (const port of [5557, 27960]) {
+  test(`ChivAdmin takeover preserves a carried listener and sessions when the mutator uses port ${port}`, () => {
+    const env = environment();
+    const active = env.add('mod', hostPort);
+    const session = env.add('session', {ParentLink: active}); active.Sessions.push(session);
+    const old = env.add('chivadmin', {RConPort: port, RConState: RCON_Initialized, LinkState: STATE_Initialized});
+    env.scope.RemoteConsole = old;
+    assert.equal(env.run(), active);
+    assert.equal(active.RConPort, 5557);
+    assert.deepEqual(active.Sessions, [session]);
+    assert.equal(active.bDeleteMe, false);
+    assert.equal(session.bDeleteMe, false);
+    assert.equal(old.bDeleteMe, true);
+    assert.equal(actions(env, 'spawn').length, 0);
+  });
+}
+
+for (const order of ['before', 'after']) {
+  test(`ChivAdmin takeover checks unrelated conflicts ${order} the known actor before retiring it`, () => {
+    const env = environment();
+    if (order === 'before') env.add('foreign', {RConPort: 5557});
+    const old = env.add('chivadmin', {RConPort: 5557});
+    if (order === 'after') env.add('foreign', {RConPort: 5557});
+    env.scope.RemoteConsole = old;
+    env.run();
+    assert.equal(old.bDeleteMe, false);
+    assert.equal(actions(env, 'close').length, 0);
+    assert.equal(actions(env, 'destroy').length, 0);
+    assert.equal(actions(env, 'spawn').length, 0);
+    assert.ok(actions(env, 'log').some(([, line]) => /conflict/i.test(line)));
+  });
+}
+
+for (const name of ['OtherMod.ChivAdminRCon', 'ChivAdmin.CustomRCon']) {
+  test(`ChivAdmin takeover does not replace unrelated class ${name}`, () => {
+    const env = environment();
+    const other = env.add('foreign', {Class: {toString: () => name}});
+    env.scope.RemoteConsole = other;
+    assert.equal(env.run(), null);
+    assert.equal(other.bDeleteMe, false);
+    assert.equal(actions(env, 'close').length, 0);
+    assert.equal(actions(env, 'destroy').length, 0);
+    assert.equal(actions(env, 'spawn').length, 0);
+  });
+}
+
+test('ChivAdmin takeover matches the full class name case-insensitively', () => {
+  const env = environment();
+  const old = env.add('chivadmin', {Class: {toString: () => 'chivadmin.CHIVADMINRCON'}});
+  env.scope.RemoteConsole = old;
+  assert.equal(env.run()?.kind, 'mod');
+  assert.equal(old.bDeleteMe, true);
+});
+
+test('ChivAdmin takeover ignores an actor already pending deletion', () => {
+  const env = environment();
+  const old = env.add('chivadmin', {RConPort: 5557, bDeleteMe: true});
+  env.scope.RemoteConsole = old;
+  assert.equal(env.run()?.RConPort, 27960);
+  assert.equal(actions(env, 'destroy').length, 0);
+});
+
+test('ChivAdmin takeover aborts replacement when retirement fails', () => {
+  const env = environment();
+  env.scope.RemoteConsole = env.add('chivadmin', {RConPort: 5557, destroyFailure: true});
+  env.run();
+  assert.equal(actions(env, 'spawn').length, 0);
+  assert.ok(actions(env, 'log').some(([, line]) => /failed.*retire|cannot.*retire/i.test(line)));
+  assert.ok(!actions(env, 'log').some(([, line]) => /routed to listening/.test(line)));
+});
+
+test('ChivAdmin retirement failure leaves an existing listener as the event route', () => {
+  const env = environment();
+  const active = env.add('mod', hostPort);
+  env.scope.RemoteConsole = env.add('chivadmin', {RConPort: 5557, destroyFailure: true});
+  assert.equal(env.run(), active);
+  assert.equal(active.bDeleteMe, false);
+  assert.equal(actions(env, 'spawn').length, 0);
+});
+
+test('ChivAdmin takeover leaves a different-port known actor outside the selected target alone', () => {
+  const env = environment();
+  const active = env.add('mod', hostPort);
+  const unrelated = env.add('chivadmin', {RConPort: 6000});
+  env.scope.RemoteConsole = env.add('chivadmin', {RConPort: 5557});
+  assert.equal(env.run(), active);
+  assert.equal(unrelated.bDeleteMe, false);
+});
+
+test('ChivAdmin takeover repeats after mutator initialization without replacing carried sessions', () => {
+  const env = environment();
+  const active = env.add('mod', hostPort);
+  const sessions = [env.add('session', {ParentLink: active}), env.add('session', {ParentLink: active})];
+  active.Sessions.push(...sessions);
+  for (let travel = 0; travel < 2; travel++) {
+    const installed = env.add('chivadmin', {RConPort: 5557, RConState: RCON_Initialized, LinkState: STATE_Initialized});
+    env.scope.RemoteConsole = installed;
+    assert.equal(env.run(), active);
+    assert.equal(installed.bDeleteMe, true);
+    assert.deepEqual(active.Sessions, sessions);
+    assert.ok(sessions.every(session => !session.bDeleteMe));
+  }
+  assert.equal(actions(env, 'spawn').length, 0);
+  assert.equal(actions(env, 'map').length, 2);
+});
+
+// Exercise the real round emitter, buffer-refilling fanout, and travel-list override.
+// The native transport mock drains the packet just as AOCRCon.SendPacket does; it
+// does not claim to model TCP ownership or the engine's actual world transition.
+test('ChivAdmin takeover keeps custom round frames reaching every authenticated session across travel', () => {
+  class Packet {
+    Buffer = [];
+    SetMessageType(type) {this.MessageType = type;}
+    AddInt(value) {const b = Buffer.alloc(4); b.writeInt32BE(value); this.Buffer.push(...b);}
+    AddString(value) {const b = Buffer.from(value); this.AddInt(b.length); this.Buffer.push(...b);}
+  }
+  const env = environment();
+  const active = env.add('mod', hostPort);
+  const received = [[], [], []];
+  const sessions = received.map((frames, index) => {
+    const session = env.add('session', {ParentLink: active, RConState: index < 2 ? 'Connected' : 'Connecting'});
+    session.SendPacket = Packet => sendPacket({...session, Packet, RCON_Connected: 'Connected', engine: {
+      SendPacket(packet) {
+        frames.push({type: packet.MessageType, body: Buffer.from(packet.Buffer)});
+        packet.Buffer.splice(0);
+      }
+    }});
+    return session;
+  });
+  active.Sessions.push(...sessions);
+  active.SendPacket = Packet => sendPacket({...active, Packet, RCON_Connected: 'Connected'});
+
+  for (let round = 1; round <= 2; round++) {
+    const installed = env.add('chivadmin', {RConPort: 5557, RConState: RCON_Initialized, LinkState: STATE_Initialized});
+    env.scope.RemoteConsole = installed;
+    assert.equal(env.run(), active);
+    assert.equal(installed.bDeleteMe, true);
+
+    sendRoundEnd({classes: {AOCRConPacket: Packet}, RCONX_ROUND_END: 66, WinningTeam: 0,
+      MapName: 'AOCLTS-Moor_p', RoundNumber: round, AgathaScore: round, MasonScore: 0,
+      MatchEnding: 0, SendPacket: active.SendPacket});
+    for (const bToEntry of [true, false]) {
+      const ActorList = [];
+      travelActors({...env.scope, bToEntry, ActorList, engine: {GetSeamlessTravelActorList() {}}});
+      assert.ok(ActorList.includes(active));
+      assert.ok(sessions.every(session => ActorList.includes(session)));
+      assert.ok(!ActorList.includes(installed));
+    }
+  }
+  assert.equal(actions(env, 'spawn').length, 0);
+  assert.equal(received[0].length, 2);
+  assert.deepEqual(received[0], received[1]);
+  assert.equal(received[2].length, 0);
+  for (const [index, frame] of received[0].entries()) {
+    assert.equal(frame.type, 66);
+    assert.equal(frame.body.readInt32BE(0), 0);
+    const length = frame.body.readInt32BE(4);
+    assert.equal(frame.body.subarray(8, 8 + length).toString(), 'AOCLTS-Moor_p');
+    assert.equal(frame.body.readInt32BE(8 + length), index + 1);
+    assert.equal(frame.body.length, 8 + length + 16);
+  }
+});

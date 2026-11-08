@@ -86,6 +86,16 @@ function SendRankedHelp(AOCPlayerController Asker)
 }
 
 /**
+ * Recognize only the published ChivAdmin listener. A string comparison avoids making
+ * that optional Workshop package a compile-time dependency or replacing other mods.
+ */
+function bool XangModIsChivAdminListener(AOCRCon RCon)
+{
+	return RCon != none && !RCon.bDeleteMe
+		&& string(RCon.Class) ~= "ChivAdmin.ChivAdminRCon";
+}
+
+/**
  * Spawn XangMod's remote console instead of the vanilla one. AOCGame.InitRemoteConsole
  * hardcodes Spawn(class'AOCRCon'), so this is the only hook needed -- XangModRCon extends
  * AOCRCon, so vanilla opcodes, auth and the GameEvent_* calls keep working untouched.
@@ -94,13 +104,18 @@ function SendRankedHelp(AOCPlayerController Asker)
  */
 function InitRemoteConsole(string Options)
 {
-	local AOCRCon RCon;
+	local AOCRCon RCon, ChivAdmin;
 	local XangModRCon Listener, Candidate;
 	local int RequiredPort;
 	local bool bPortConflict;
 
 	if (WorldInfo.NetMode != NM_DedicatedServer)
 		return;
+
+	// Mutator initialization runs first and may overwrite the route without destroying
+	// the carried XangMod actor. Remember the exact actor it installed before selection.
+	if (XangModIsChivAdminListener(RemoteConsole))
+		ChivAdmin = RemoteConsole;
 
 	// The effective configured default for a newly spawned XangModRCon. An existing
 	// listener can have a different instance port, so validate reuse against its own port.
@@ -111,9 +126,7 @@ function InitRemoteConsole(string Options)
 	RemoteConsole = none;
 
 	// A class-default comparison can reject a valid carried listener if its instance port
-	// differs, routing events to an empty replacement. This conditional defect is covered
-	// by tests; its role in the November 2026 outage remains unconfirmed. Prefer a valid
-	// listening actor, then the one holding more sessions.
+	// differs. Prefer a valid listening actor, then the one holding more sessions.
 	foreach WorldInfo.AllActors(class'XangModRCon', Candidate)
 	{
 		if (Candidate == Listener || !Candidate.XangModCanReuseListener(Candidate.RConPort))
@@ -124,6 +137,38 @@ function InitRemoteConsole(string Options)
 				&& Candidate.Sessions.Length > Listener.Sessions.Length))
 			Listener = Candidate;
 	}
+
+	// With no working XangMod listener, recover the host's ChivAdmin endpoint even when
+	// the game route was cleared. An empty retry actor on the default port is not evidence
+	// that clients use that port. Reuse a matching XangMod actor or spawn one below.
+	if (Listener == none || (!Listener.XangModIsListening() && Listener.Sessions.Length == 0))
+	{
+		if (ChivAdmin == none)
+		{
+			foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+			{
+				if (XangModIsChivAdminListener(RCon))
+				{
+					ChivAdmin = RCon;
+					break;
+				}
+			}
+		}
+		if (ChivAdmin != none)
+		{
+			RequiredPort = ChivAdmin.RConPort;
+			if (Listener != none && Listener.RConPort != RequiredPort)
+				Listener = none;
+			foreach WorldInfo.AllActors(class'XangModRCon', Candidate)
+			{
+				if (Candidate.XangModCanReuseListener(RequiredPort)
+					&& (Listener == none || Candidate.Sessions.Length > Listener.Sessions.Length))
+					Listener = Candidate;
+			}
+		}
+	}
+	if (Listener != none)
+		RequiredPort = Listener.RConPort;
 
 	// Retire only unbound retry actors with no sessions. A failed readiness check can still
 	// describe a native listening socket, so it is not sufficient evidence for destruction.
@@ -157,7 +202,7 @@ function InitRemoteConsole(string Options)
 			if (RCon.bDeleteMe || XangModRConSession(RCon) != none || RCon.RConPort != RequiredPort)
 				continue;
 
-			if (RCon.Class != class'AOCRCon')
+			if (RCon.Class != class'AOCRCon' && !XangModIsChivAdminListener(RCon))
 			{
 				bPortConflict = true;
 				LogAlwaysInternal("[XangModRCon] possible listener conflict: another actor is configured for port"
@@ -171,7 +216,31 @@ function InitRemoteConsole(string Options)
 				@ "- Heir round telemetry is unavailable; inspect AdminRConStatus and the listener logs");
 			return;
 		}
+	}
 
+	// ChivAdmin's independent ping timer can mask a broken game-event route. Its mutator
+	// may stay installed, but XangMod must own the event socket to emit round frames.
+	// Retire its current target and same-port duplicates, including an unbound actor that
+	// the mutator just spawned during travel. Keep the carried XangMod sessions intact.
+	foreach WorldInfo.AllActors(class'AOCRCon', RCon)
+	{
+		if (!XangModIsChivAdminListener(RCon)
+			|| (RCon != ChivAdmin && RCon.RConPort != RequiredPort))
+			continue;
+
+		LogAlwaysInternal("[XangModRCon] replacing ChivAdmin listener" @ string(RCon)
+			@ "on port" @ RCon.RConPort @ "- XangMod will serve port" @ RequiredPort);
+		RCon.Close();
+		if (!RCon.Destroy())
+		{
+			RemoteConsole = Listener;
+			LogAlwaysInternal("[XangModRCon] failed to retire ChivAdmin listener; replacement aborted");
+			return;
+		}
+	}
+
+	if (Listener == none)
+	{
 		// Retire vanilla itself, never another mod's actor or an accepted session.
 		foreach WorldInfo.AllActors(class'AOCRCon', RCon)
 		{
@@ -188,6 +257,10 @@ function InitRemoteConsole(string Options)
 		}
 
 		Listener = Spawn(class'XangModRCon');
+		// PostBeginPlay sets AcceptClass; native binding happens on the next Tick.
+		// Preserve the retired endpoint's port without changing class defaults or config.
+		if (Listener != none)
+			Listener.RConPort = RequiredPort;
 	}
 	else if (!Listener.XangModIsListening())
 	{
