@@ -56,6 +56,7 @@ const init = compile(serverSource, 'InitRemoteConsole');
 const status = compile(adminSource, 'ServerAdminRConStatus');
 const reusable = compile(rconSource, 'XangModCanReuseListener', true);
 const listening = compile(rconSource, 'XangModIsListening', true);
+const idleListener = compile(rconSource, 'XangModIsIdleListener', true);
 const findListener = compile(rconSource, 'XangModFindListener');
 const classes = {
   AOCRCon: {name: 'AOCRCon', default: {RConPort: 27960}},
@@ -65,7 +66,7 @@ const classes = {
 };
 for (const entry of Object.values(classes)) entry.toString = () => entry.name;
 const RCON_Initialized = 'Initialized', RCON_Listening = 'Listening', RCON_Closing = 'Closing';
-const STATE_Listening = 'STATE_Listening';
+const STATE_Listening = 'STATE_Listening', STATE_Initialized = 'STATE_Initialized';
 const cast = actor => actor && ['mod','session'].includes(actor.kind) ? actor : null;
 const sessionCast = actor => actor?.kind === 'session' ? actor : null;
 function environment(options = {}) {
@@ -100,10 +101,11 @@ function environment(options = {}) {
       toString() {return this.Class.name;},
       ...props
     };
-    const helperScope = extra => ({...actor, self: actor, classes, RCON_Initialized, RCON_Listening, RCON_Closing, STATE_Listening,
+    const helperScope = extra => ({...actor, self: actor, classes, RCON_Initialized, RCON_Listening, RCON_Closing, STATE_Listening, STATE_Initialized,
       XangModRCon: cast, XangModRConSession: sessionCast, ...extra});
     actor.XangModCanReuseListener = port => reusable?.(helperScope({RequiredPort: port}));
     actor.XangModIsListening = () => listening?.(helperScope());
+    actor.XangModIsIdleListener = () => idleListener?.(helperScope());
     actors.push(actor); return actor;
   }
   return {scope,events,actors,add,run() {init(scope); return scope.RemoteConsole;}};
@@ -260,9 +262,8 @@ test('readiness checks native state, bound port and the accepting class', () => 
   }
 });
 
-// Production, 4-7 November 2026: hosts whose live listener port (5557) differed from the
-// class default lost every game event after the first map change and dropped clients on
-// each one after that. Listeners must be judged by their own port.
+// Model an instance/default port mismatch. This reproduces the old selection defect,
+// but does not establish that a mismatch caused the November 2026 production incident.
 const hostPort = {RConPort: 5557, XangModBoundPort: 5557};
 test('travel keeps a listener whose runtime port differs from the class default, with its sessions', () => {
   const env = environment(), active = env.add('mod', hostPort);
@@ -310,3 +311,27 @@ test('a session attaches to a non-default-port target when ownership is unavaila
   env.scope.WorldInfo.Game = {isAOCGame: true, RemoteConsole: actual};
   assert.equal(findListener({...env.scope, RConPort: 27960, Owner: null}), actual);
 });
+
+for (const [name, props] of [
+  ['a native listener with another accepting class', {AcceptClass: classes.OtherRCon}],
+  ['a native listener with stale bound-port bookkeeping', {XangModBoundPort: 0}],
+  ['a native listener with initialized script state', {RConState: RCON_Initialized}],
+  ['an unbound actor whose script is closing', {RConState: RCON_Closing, LinkState: 'STATE_Initialized'}],
+  ...['STATE_Ready', 'STATE_Connecting', 'STATE_Connected', 'STATE_ListenClosePending',
+    'STATE_ConnectClosePending', 'STATE_ListenClosing', 'STATE_ConnectClosing'].map(LinkState =>
+    [`a native ${LinkState} actor with initialized script state`, {RConState: RCON_Initialized, LinkState}])
+]) {
+  test(`duplicate cleanup preserves ${name}`, () => {
+    const env = environment();
+    const candidate = env.add('mod', props);
+    const pending = env.add('mod', {RConState: RCON_Initialized, LinkState: 'STATE_Initialized', XangModBoundPort: 0});
+    env.scope.RemoteConsole = pending;
+
+    assert.equal(candidate.XangModIsListening(), false);
+    assert.equal(env.run(), pending);
+    assert.equal(candidate.bDeleteMe, false);
+    assert.equal(actions(env, 'destroy').length, 0);
+    assert.equal(actions(env, 'spawn').length, 0);
+    assert.ok(actions(env, 'log').some(([, line]) => /left in place/.test(line)));
+  });
+}

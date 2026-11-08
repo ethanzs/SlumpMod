@@ -293,6 +293,14 @@ function bool XangModIsListening()
 		&& AcceptClass == class'XangModRConSession' && XangModBoundPort == RConPort;
 }
 
+/** Only an unbound retry actor is idle; failing the readiness checks does not prove that. */
+function bool XangModIsIdleListener()
+{
+	return !bDeleteMe && XangModRConSession(self) == none && ParentLink == none
+		&& RConState == RCON_Initialized && LinkState == STATE_Initialized
+		&& Sessions.Length == 0;
+}
+
 function string XangModStateName()
 {
 	switch (RConState)

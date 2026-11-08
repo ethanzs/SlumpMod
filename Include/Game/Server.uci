@@ -102,20 +102,18 @@ function InitRemoteConsole(string Options)
 	if (WorldInfo.NetMode != NM_DedicatedServer)
 		return;
 
-	// The port a newly spawned XangModRCon starts with. Only used when no XangMod listener
-	// exists yet: a live listener's own port can differ from it at runtime (a host can set
-	// the RCON port outside this class's config), so it is never the test for reuse.
+	// The effective configured default for a newly spawned XangModRCon. An existing
+	// listener can have a different instance port, so validate reuse against its own port.
 	RequiredPort = class'XangModRCon'.default.RConPort;
 	Listener = XangModRCon(RemoteConsole);
 	if (Listener != none && !Listener.XangModCanReuseListener(Listener.RConPort))
 		Listener = none;
 	RemoteConsole = none;
 
-	// Selection comes first, and each XangMod listener is judged by its own port. Judging a
-	// carried listener by the class default rejected it on every map change whenever the two
-	// differed: a second actor became the event target with no sessions, every connected
-	// client stopped hearing game events, and the next travel carried only the empty actor,
-	// dropping them all. Prefer the actor holding the socket, then the one holding sessions.
+	// A class-default comparison can reject a valid carried listener if its instance port
+	// differs, routing events to an empty replacement. This conditional defect is covered
+	// by tests; its role in the November 2026 outage remains unconfirmed. Prefer a valid
+	// listening actor, then the one holding more sessions.
 	foreach WorldInfo.AllActors(class'XangModRCon', Candidate)
 	{
 		if (Candidate == Listener || !Candidate.XangModCanReuseListener(Candidate.RConPort))
@@ -127,9 +125,8 @@ function InitRemoteConsole(string Options)
 			Listener = Candidate;
 	}
 
-	// A second XangMod listener that never bound and holds no sessions is a stale duplicate.
-	// Left alive it keeps retrying the bind, takes the port once the selected listener goes,
-	// and then accepts clients without being the game's event target. Retire it now.
+	// Retire only unbound retry actors with no sessions. A failed readiness check can still
+	// describe a native listening socket, so it is not sufficient evidence for destruction.
 	if (Listener != none)
 	{
 		foreach WorldInfo.AllActors(class'XangModRCon', Candidate)
@@ -138,9 +135,9 @@ function InitRemoteConsole(string Options)
 				|| Candidate.ParentLink != none || Candidate.RConPort != Listener.RConPort)
 				continue;
 
-			if (Candidate.XangModIsListening() || Candidate.Sessions.Length > 0)
+			if (!Candidate.XangModIsIdleListener())
 			{
-				LogAlwaysInternal("[XangModRCon] another XangMod listener is active on port" @ Candidate.RConPort
+				LogAlwaysInternal("[XangModRCon] another XangMod listener is not an idle retry actor on port" @ Candidate.RConPort
 					@ string(Candidate) @ "- left in place; inspect AdminRConStatus");
 				continue;
 			}

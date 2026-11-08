@@ -1643,19 +1643,27 @@ Autoskip marks a stage before activating Kismet so synchronous transitions see t
 When no matching event accepts activation, the mark is cleared: a later real completion
 must not be reported as skipped.
 
-`InitRemoteConsole` reuses only a valid XangMod listener, judged by its own port. A live
-listener's port can differ from `class'XangModRCon'.default.RConPort` (a host can set it
-outside this class's config), so the class default is only the port a new listener starts
-with, never the test for reuse. Comparing against it rejected the carried listener on every
-map change: a second actor became the event target with no sessions, clients stopped
-receiving game events (kills, team changes, chat, round ends) and were dropped at the next
-travel. Among several XangMod listeners the one holding the socket wins, then the one
-holding sessions; an idle duplicate on the same port (never bound, no sessions) is retired
-so it cannot take the port later. A vanilla listener on the required port is retired before
-a replacement is created; another mod's conflicting listener is reported explicitly.
+`InitRemoteConsole` reuses only a valid XangMod listener, judged by its own configured port.
+The class default determines the port of a new listener. If an existing instance's port
+differs from that default, comparing against the default can reject a carried listener and
+route game events away from its sessions. Ordinary INI configuration also sets class
+defaults, so a nonstandard endpoint port alone does not establish such a mismatch.
+
+Among valid candidates, a listening actor wins, then the one holding more sessions. A
+duplicate on the same port is retired only when it has no sessions and both its script
+state and native socket state are initialized (`RCON_Initialized`, `STATE_Initialized`).
+The selected listener, session subclasses, and actors with a `ParentLink` are protected.
+Other duplicates are logged and left in place, including native listeners whose metadata
+fails the reuse checks. A vanilla listener on the required port is retired before a
+replacement is created; another mod's conflicting listener is reported explicitly.
 `AdminRConStatus` displays the runtime game class and actual `RemoteConsole` event target,
-including whether its native socket is listening, its configured and bound ports and the
-class default port. A newly spawned actor is reported as waiting to bind, not as ready.
+including its readiness, configured and recorded bound ports, and the class default port.
+A newly spawned actor is reported as waiting to bind, not as ready.
+
+The cause of the November 4–7, 2026 telemetry outage remains unconfirmed. The inspected
+ping path also uses `Game.RemoteConsole`, so an empty event target would suppress pings
+too. Confirm the deployed code, instance/default ports, and actor ownership across travel
+before attributing that incident to this port comparison.
 
 ### CONSOLE_COMMAND is the important one
 
